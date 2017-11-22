@@ -96,7 +96,7 @@ public  static  final  long CACHE_MAX_AGE=60*30;
 /*
   根据网络状况获取缓存策略
  */
-   public static  String getCacheControlCache(){
+   public static  String getCacheControl(){
        return NetWorkUtil.isNetworkAvaiable()?CACHE_CONTROL_AGE:CACHE_CONTROL_CACHE;
    }
 

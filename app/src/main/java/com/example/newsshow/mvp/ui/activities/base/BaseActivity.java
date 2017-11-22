@@ -4,7 +4,6 @@ import android.content.Context;
 import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.PersistableBundle;
 import android.support.annotation.Nullable;
 import android.support.v7.app.AppCompatActivity;
 import android.support.v7.app.AppCompatDelegate;
@@ -14,131 +13,173 @@ import android.view.View;
 import android.view.WindowManager;
 
 import com.example.newsshow.MainActivity;
+import com.example.newsshow.MyApplication;
 import com.example.newsshow.R;
 import com.example.newsshow.di.component.AppComponent;
 import com.example.newsshow.mvp.presenter.interfaces.BasePresenter;
 import com.example.newsshow.utils.SharePreferenceUtils;
-
+import javax.inject.Inject;
 import rx.Subscription;
 
 /**
- * Created by Administrator on 2017/11/15.
+ * 绑定 presenter
+ * Created by Yoosir on 2016/10/19 0019.
  */
+public abstract class BaseActivity<T extends BasePresenter> extends AppCompatActivity {
 
-public  abstract class BaseActivity<T extends BasePresenter>  extends AppCompatActivity {
-     protected  T mPresneter;
-    public  abstract int getLayoutId();
-    public  abstract void initVariable();
-    public  abstract  void  initView();
-    public Subscription subscription;
-    private  boolean ismIsAddView;
-    private View mNightView;
-    private WindowManager mWindowManager;
+    @Inject
+    protected  T mPresenter;
+
+    protected MyApplication mApplication;
+    private WindowManager mWindowManager = null;
+    private View mNightView = null;
+    private boolean mIsAddedView;
+
+    protected Subscription mSubscription;
+
+    public abstract int getLayoutId();
+
+    public abstract void initVariables();
+
+    public abstract void initViews();
 
     @Override
-    public void onCreate(@Nullable Bundle savedInstanceState, @Nullable PersistableBundle persistentState) {
-        super.onCreate(savedInstanceState, persistentState);
-          setNigthorDayMode();//设置主题
-        //填充布局
-      int layoutId =  getLayoutId();
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        setNightOrDayMode();
+//        setStatusBarTranslucent();
+        int layoutId = getLayoutId();
         setContentView(layoutId);
         //定义变量或读取传递参数
-        initVariable();
-        //初始化view
-        initView();
+        initVariables();
+        //绑定到butterKnife
+//        ButterKnife.bind(this);
+        //注入依赖
+        ComponentInject();
+        //设置ToolBar
         initToolBar();
+        //初始化View
+        initViews();
         initData();
-
     }
 
-    private void initToolBar() {
-            if (!(this instanceof MainActivity)){
-                Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
-                setSupportActionBar(toolbar);
-            }
-
+    protected void initData() {
+        if(mPresenter != null){
+            mPresenter.onCreat();
+        }
     }
 
+    protected void ComponentInject(){
+        mApplication = (MyApplication) MyApplication.getInstance();
+        setupActivityComponent(mApplication.getAppComponent());
+    }
 
     //提供AppComponent(提供所有的单例对象)给子类，进行Component依赖
     protected abstract void setupActivityComponent(AppComponent appComponent);
 
-    private void setNigthorDayMode() {
-        if (SharePreferenceUtils.isNigthMode()){
-            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
-          initNightView();
-           mNightView.setBackgroundResource(R.color.night_mask);
-        }else{
+    protected void initToolBar(){
+        if(!(this instanceof MainActivity)) {
+            Toolbar toolbar = (Toolbar) findViewById(R.id.toolbar);
+            setSupportActionBar(toolbar);
+        }
+    }
 
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case android.R.id.home:
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    finishAfterTransition();
+                } else {
+                    finish();
+                }
+                break;
+        }
+        return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (mPresenter != null){
+          mPresenter.onDestory();
+        }
+        removeNightModeMask();
+        //TODO unSubscribe
+        if (mSubscription != null && !mSubscription.isUnsubscribed()) {
+            mSubscription.unsubscribe();
+        }
+    }
+
+    public boolean ismIsAddedView() {
+        return mIsAddedView;
+    }
+
+    public void setIsAddedView(boolean isAddedView) {
+        this.mIsAddedView = isAddedView;
+    }
+
+//    @TargetApi(Build.VERSION_CODES.KITKAT)
+//    protected void setStatusBarTranslucent(){
+//        if(Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT){
+//            if(!(this instanceof NewsDetailActivity )) {
+//                getWindow().addFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS);
+//                SystemBarTintManager tintManager = new SystemBarTintManager(this);
+//                tintManager.setStatusBarTintEnabled(true);
+//                tintManager.setStatusBarTintResource(R.color.colorPrimary);
+//            }
+//        }
+//    }
+
+    public void changeToDay() {
+        getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_NO);
+        mNightView.setBackgroundResource(android.R.color.transparent);
+    }
+
+    public void changeToNight() {
+        getDelegate().setLocalNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+        initNightView();
+        mNightView.setBackgroundResource(R.color.night_mask);
+    }
+
+    /**
+     *  设置主题样式，必须在setContentView 之前调用
+     */
+    private void setNightOrDayMode(){
+        if(SharePreferenceUtils.isNigthMode()){
+            AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES);
+            initNightView();
+            mNightView.setBackgroundResource(R.color.night_mask);
+        }else{
             AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO);
         }
-
     }
 
-    public  boolean ismIsAddView(){
-        return  ismIsAddView;
-    }
-
-    public  void setIsAddView(boolean isAddView){
-        this.ismIsAddView=isAddView;
-    }
-
-    private void  initNightView() {
-        if (ismIsAddView){
-            return ;
+    /**
+     * 初始化 夜间模式 模板
+     */
+    private void initNightView(){
+        //
+        if(mIsAddedView){
+            return;
         }
-        WindowManager.LayoutParams ningthViewParams=  new WindowManager.LayoutParams(
+        WindowManager.LayoutParams nightViewParam = new WindowManager.LayoutParams(
                 WindowManager.LayoutParams.TYPE_APPLICATION,
                 WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                 PixelFormat.TRANSPARENT
         );
         mWindowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
         mNightView = new View(this);
-        mWindowManager.addView(mNightView,ningthViewParams);
-     ismIsAddView=true;
+        mWindowManager.addView(mNightView,nightViewParam);
+        mIsAddedView = true;
     }
 
-
-    protected void initData(){
-        if (mPresneter!=null){
-            mPresneter.onDestory();
-        }
-    }
-
-    @Override
-    protected void onDestroy() {
-        super.onDestroy();
-        if (mPresneter!=null){
-            mPresneter.onDestory();
-        }
-        removeNigthModel();
-        if (subscription!=null&&subscription.isUnsubscribed()){
-            subscription.unsubscribe();
-        }
-    }
-
-    private void  removeNigthModel() {
-        if (ismIsAddView){
+    private void removeNightModeMask() {
+        if (mIsAddedView) {
+            // 移除夜间模式蒙板
             mWindowManager.removeViewImmediate(mNightView);
-            mWindowManager=null;
-            mNightView=null;
-
+            mWindowManager = null;
+            mNightView = null;
         }
-
-
-    }
-
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()){
-            case R.id.home_news:
-                if (Build.VERSION.SDK_INT>Build.VERSION_CODES.LOLLIPOP){
-                    finishAfterTransition();
-                }else{
-                   finish();
-                }
-                break;
-        }
-        return super.onOptionsItemSelected(item);
     }
 }
